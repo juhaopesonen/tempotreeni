@@ -375,14 +375,55 @@ function addHit(tc, err, k){
 
 // Soittajan tempo mittausjakson (S.winBeats viimeisintä beattia) iskuista: suora sovitus aika vs.
 // paikka beateissa. sdMs = iskujen hajonta oman tempon ympärillä (tasaisuus).
+// Suora sovitus, joka sietää yhden vaiheen hypyn: fillin jälkeen soitto jatkuu usein hieman
+// aiemmin tai myöhemmin samassa tempossa, eikä sitä pidä tulkita tempon muutokseksi.
+// Kokeillaan jokaista katkoskohtaa (yhteinen kulmakerroin, eri vakiotermit ennen ja jälkeen) ja
+// käytetään sitä, jos se selittää iskut selvästi paremmin kuin yksi suora (virhe alle puoleen ja
+// hyppy yli 50 ms). Palauttaa katkoksen jälkeisen osan vakiotermin a.
+function jumpFit(h){
+  const one = fitLine(h, 1); if (!one) return null;
+  const sse = (pts, a, b) => pts.reduce((s,x) => s + (x.tc - a - b*x.k)**2, 0);
+  const mean = (pts, f) => pts.reduce((s,x) => s + f(x), 0) / pts.length;
+  const sse1 = sse(h, one.a, one.b);
+  let best = null;
+  for (let m = 3; m <= h.length - 3; m++){
+    const A = h.slice(0, m), B = h.slice(m);
+    const kA = mean(A, x => x.k), tA = mean(A, x => x.tc), kB = mean(B, x => x.k), tB = mean(B, x => x.tc);
+    let sxxA = 0, sxyA = 0, sxxB = 0, sxyB = 0;
+    for (const x of A){ sxxA += (x.k-kA)**2; sxyA += (x.k-kA)*(x.tc-tA); }
+    for (const x of B){ sxxB += (x.k-kB)**2; sxyB += (x.k-kB)*(x.tc-tB); }
+    if (sxxA < 1e-9 || sxxB < 1e-9) continue;
+    const b = (sxyA + sxyB) / (sxxA + sxxB), aA = tA - b*kA, aB = tB - b*kB, e = sse(A, aA, b) + sse(B, aB, b);
+    if (!best || e < best.e) best = {e, b, a: aB, jump: aB - aA};
+  }
+  if (!best || !(best.b > 0) || best.e >= 0.5 * sse1 || Math.abs(best.jump) <= 0.05) return {a: one.a, b: one.b, sse: sse1, jump: false};
+  // Hypyssä iskut siirtyvät kerralla, kiihdytyksessä ero kasvaa vähitellen. Hyppy hyväksytään vain,
+  // jos se selittää iskut selvästi paremmin kuin malli, jossa tempo vaihtuu jostain kohdasta alkaen.
+  if (best.e >= 0.6 * kinkSSE(h)) return {a: one.a, b: one.b, sse: sse1, jump: false};
+  return {a: best.a, b: best.b, sse: best.e, jump: true};
+}
+// Pienin virhe mallille t = a + b·k + c·max(0, k − km), jossa tempo vaihtuu kohdasta km alkaen.
+function kinkSSE(h){
+  let best = Infinity;
+  for (let m = 2; m <= h.length - 2; m++){
+    const km = h[m-1].k, X = h.map(p => [1, p.k, Math.max(0, p.k - km)]);
+    const A = [[0,0,0],[0,0,0],[0,0,0]], y = [0,0,0];
+    X.forEach((x,i) => { for (let r=0;r<3;r++){ y[r] += x[r]*h[i].tc; for (let c=0;c<3;c++) A[r][c] += x[r]*x[c]; } });
+    const inv = inv3(A); if (!inv) continue;
+    const co = [0,1,2].map(r => inv[r][0]*y[0] + inv[r][1]*y[1] + inv[r][2]*y[2]);
+    const e = X.reduce((s,x,i) => s + (h[i].tc - co[0] - co[1]*x[1] - co[2]*x[2])**2, 0);
+    if (e < best) best = e;
+  }
+  return best;
+}
+
 function windowFit(){
   if (!hits.length) return null;
   const kLast = hits[hits.length-1].k;
   const h = hits.filter(x => x.k >= kLast - S.winBeats - 1e-9);
   if (h.length < 4 || kLast - h[0].k < Math.min(S.winBeats, 3) - 1e-9) return null;
-  const f = fitLine(h, 1); if (!f) return null;
-  const ss = h.reduce((s,x) => s + (x.tc - f.a - f.b*x.k)**2, 0);
-  return {bpm: 60 / f.b, sdMs: Math.sqrt(ss / Math.max(1, h.length - 2)) * 1000, full: kLast - h[0].k >= S.winBeats - 1};
+  const f = jumpFit(h); if (!f) return null;
+  return {bpm: 60 / f.b, sdMs: Math.sqrt(f.sse / Math.max(1, h.length - (f.jump ? 3 : 2))) * 1000, full: kLast - h[0].k >= S.winBeats - 1};
 }
 
 function evaluate(){
@@ -461,13 +502,16 @@ function inv3(m){
 }
 // Soittajan pulssit: aika kohdassa k (beateissa) ja pulssin väli siinä kohdassa.
 function playerModel(){
-  const lin = fitLine(hits.slice(-10), 0.7);
-  if (!lin) return null;
+  const lin0 = fitLine(hits.slice(-10), 0.7);
+  if (!lin0) return null;
+  // vaiheen hyppy (esim. fillin jälkeen): tempo hypyn huomioivasta sovituksesta, ei käyrää
+  const jf = jumpFit(hits.slice(-12)), jumped = !!(jf && jf.jump);
+  const lin = jumped ? jf : lin0;
   // Klikin palatessa tiedetään jo, mihin suuntaan soittaja on karannut (kiirehtii → tempo kiihtyy),
   // joten samansuuntainen tempon muutos hyväksytään lievemmälläkin näytöllä.
   const h = hits.slice(-12);
   const dir = cur ? -Math.sign(cur.bpm - S.bpm) : 0;   // nopeampi → tempo kiihtyy (c < 0)
-  const q = fitQuad(h, 3) || (dir ? fitQuad(h, 1.5, dir) : null);
+  const q = jumped ? null : (fitQuad(h, 3) || (dir ? fitQuad(h, 1.5, dir) : null));
   // käyrää käytetään vain, jos sen antama nykyinen tempo on järkevä suoraan verrattuna
   // Käyrästä käytetään tempoa viimeisimmän iskun kohdalla eikä ennusteta muutoksen jatkumista:
   // äkillisessä tempon vaihdossa jatkoa ei tule, ja tarttuminen korjaa loput.
