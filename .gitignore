@@ -1,0 +1,4 @@
+# Omat harjoitustallenteet ja nauhoitukset eivät kuulu julkiseen repositorioon
+/tempotreeni-*.wav
+/tempotreeni-*.json
+*.m4a

@@ -14,6 +14,8 @@ Avaa `tempotreeni.html` selaimessa. Käytä kuulokkeita, ettei klikki kuulu mikr
 
 Paina ensin **Kalibroi** ja soita tai naputa 16 neljäsosaa klikin mukana, niin ohjelma korjaa laitteen viiveen.
 
+Jos ohjelma toimii oudosti, kytke päälle **Tallenna harjoitus** (Syöte-osiossa). Lopetettuasi voit ladata mikrofonin äänen (WAV) ja lokin ohjelman tulkinnoista. Äänen ja lokin ajat ovat samalla aikajanalla, joten niistä näkee tarkalleen, mitä ohjelma kuuli ja päätteli. Tallenteet jäävät laitteelle, eikä `.gitignore` päästä niitä repositorioon.
+
 ## Testiäänet
 
 Kansiossa `testiaanet/` on syntetisoituja rumpunauhoituksia, joiden todellinen tempo tiedetään (`testiaanet.json`):
