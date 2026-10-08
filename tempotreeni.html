@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tempotreeni</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e8eaf0; --dim:#8b92a3;
+  --ok:#3ecf8e; --warn:#ffb020; --bad:#ff5d5d; --accent:#6ea8ff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{padding:16px;padding-bottom:40px;max-width:760px;margin:0 auto}
+h1{font-size:20px;margin:4px 0 14px;font-weight:600}
+.stage{position:relative;border-radius:18px;background:var(--panel);border:1px solid var(--line);
+  min-height:230px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;overflow:hidden;touch-action:manipulation;user-select:none;padding:18px}
+#flash{position:absolute;inset:0;background:var(--warn);opacity:0;pointer-events:none}
+.stage>*:not(#flash){position:relative}
+#state{font-size:15px;color:var(--dim);letter-spacing:.04em;text-transform:uppercase}
+#drift{font-size:64px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;margin:6px 0}
+#hint{font-size:15px;color:var(--dim);min-height:22px}
+.stage.ok #state,.stage.ok #drift{color:var(--ok)}
+.stage.late #state,.stage.late #drift,.stage.early #state,.stage.early #drift{color:var(--warn)}
+.row{display:flex;gap:10px;margin:12px 0;align-items:stretch}
+button{font:inherit;border:0;border-radius:12px;padding:14px 18px;cursor:pointer;background:var(--accent);color:#0b1020;font-weight:600}
+button.stop{background:var(--bad);color:#fff}
+button.sec{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+button.small{padding:8px 12px;font-size:14px}
+#go{flex:1;font-size:18px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+@media (max-width:520px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--dim)}
+canvas{width:100%;height:150px;background:var(--panel);border:1px solid var(--line);border-radius:12px;display:block}
+.meter{height:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;position:relative;margin:8px 0 2px;overflow:hidden}
+.meter i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent)}
+.meter u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad)}
+.small{font-size:12px;color:var(--dim)}
+.settings{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 14px;margin-top:14px}
+.set{padding:10px 0;border-bottom:1px solid var(--line)}
+.set:last-child{border-bottom:0}
+.set label{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.set label output{color:var(--accent);font-variant-numeric:tabular-nums}
+.set input[type=range]{width:100%;margin:6px 0 0}
+.set select{font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px}
+.set input[type=file]{font:inherit;font-size:13px;color:var(--dim);max-width:100%}
+.set .small{margin-top:2px}
+.inline{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px}
+h2{font-size:14px;color:var(--dim);margin:18px 0 0;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+</style>
+</head>
+<body>
+<h1>Tempotreeni</h1>
+
+<div class="stage" id="stage">
+  <div id="flash"></div>
+  <div id="state">Valmis</div>
+  <div id="drift">–</div>
+  <div id="hint">Aseta tempo ja paina Aloita. Käytä kuulokkeita.</div>
+</div>
+
+<div class="row">
+  <button id="go">Aloita</button>
+  <button id="tap" class="sec" title="Napauta tai paina välilyöntiä">Napauta</button>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="sMed">–</b><span>poikkeama (mediaani)</span></div>
+  <div class="stat"><b id="sBpm">–</b><span>sinun tempo</span></div>
+  <div class="stat"><b id="sAbs">–</b><span>keskim. virhe</span></div>
+  <div class="stat"><b id="sQuiet">–</b><span>aikaa hiljaa</span></div>
+</div>
+
+<canvas id="chart"></canvas>
+<div class="small" style="margin-top:4px">Pisteet = viimeisimmät iskut. Ylös = jäljessä (laahaa), alas = edellä (kiirehtii). Katkoviivat = sallitut rajat.</div>
+
+<div class="settings" id="settings">
+  <h2 style="margin-top:8px">Tempo</h2>
+  <div class="set"><label>Tempo <output id="o_bpm"></output></label><input type="range" id="bpm" min="30" max="240" step="1"></div>
+  <div class="set"><div class="inline"><span>Aksentti</span>
+    <select id="bar"><option value="0">Ei aksenttia</option><option value="2">joka 2. isku</option><option value="3">joka 3. isku</option><option value="4">joka 4. isku</option><option value="5">joka 5. isku</option><option value="6">joka 6. isku</option><option value="7">joka 7. isku</option></select></div></div>
+  <div class="set"><div class="inline"><span>Iskujen vertailuruudukko</span>
+    <select id="sub"><option value="0">Automaattinen</option><option value="1">1/4-iskut</option><option value="2">1/8-iskut</option><option value="3">triolit</option><option value="4">1/16-iskut</option></select></div>
+    <div class="small">Automaattinen tunnistaa jokaisen iskun aikana, soitatko suoria (1/8, 1/16) vai trioleja/shufflea. Epäselvät iskut jätetään mittauksesta pois. Jos tunnistus horjuu, valitse ruudukko itse.</div></div>
+
+  <h2>Toleranssi</h2>
+  <div class="set"><label>Kiirehtiminen sallittu <output id="o_rush"></output></label><input type="range" id="rush" min="5" max="120" step="1">
+    <div class="small">Klikki palaa, kun soitat keskimäärin näin paljon edellä.</div></div>
+  <div class="set"><label>Laahaaminen sallittu <output id="o_drag"></output></label><input type="range" id="drag" min="5" max="120" step="1">
+    <div class="small">Klikki palaa, kun soitat keskimäärin näin paljon jäljessä.</div></div>
+  <div class="set"><label>Keskiarvoistus <output id="o_win"></output></label><input type="range" id="win" min="3" max="16" step="1">
+    <div class="small">Montako viimeisintä iskua huomioidaan. Pieni = nopea reagointi, suuri = rauhallisempi.</div></div>
+  <div class="set"><label>Ohjausnopeus <output id="o_glide"></output></label><input type="range" id="glide" min="0.1" max="4" step="0.1">
+    <div class="small">Kun klikki palaa, se alkaa sinun senhetkisestä tempostasi ja liukuu tätä vauhtia kohti asetettua tempoa. Pieni arvo = hyvin pehmeä paluu.</div></div>
+  <div class="set"><label>Klikki palaa jos et soita <output id="o_silence"></output></label><input type="range" id="silence" min="2" max="32" step="1">
+    <div class="small">Iskua (beat) ilman havaittuja iskuja → klikki takaisin.</div></div>
+
+  <h2>Ääni ja näyttö</h2>
+  <div class="set"><label>Klikin voimakkuus <output id="o_vol"></output></label><input type="range" id="vol" min="5" max="100" step="1"></div>
+  <div class="set"><div class="inline"><span>Vilkku näytöllä kun klikki soi</span><input type="checkbox" id="flashOn"></div>
+    <div class="small">Kun olet tempossa, ruutu pysyy rauhallisena eikä vilku.</div></div>
+
+  <h2>Syöte</h2>
+  <div class="set"><div class="inline"><span>Iskujen tunnistus</span>
+    <select id="input"><option value="mic">Mikrofoni</option><option value="tap">Napautus / välilyönti</option><option value="file">Äänitiedosto (testi)</option></select></div></div>
+  <div class="set" id="fileRow"><input type="file" id="file" accept="audio/*">
+    <div class="small">Tiedoston alku soi yhtä aikaa ensimmäisen klikin kanssa, joten aloita tallenne ensimmäisestä iskusta. Tallenne ei kuule klikkiä, joten sillä voi testata vain tunnistusta: tempon karkaamisen ja klikin paluun.</div></div>
+  <div class="set" id="micRow"><label>Mikrofonin herkkyys <output id="o_sens"></output></label><input type="range" id="sens" min="0" max="100" step="1">
+    <div class="meter"><i id="lvl"></i><u id="thr"></u></div>
+    <div class="small">Palkin pitää ylittää punainen viiva iskusta, mutta ei hiljaisuudessa. Tunnistettu isku vilauttaa palkkia.</div></div>
+  <div class="set"><label>Viivekorjaus <output id="o_latency"></output></label><input type="range" id="latency" min="-150" max="150" step="1">
+    <div class="inline" style="margin-top:8px"><span class="small">Kalibrointi: soita tai naputa 16 neljäsosaa klikin mukana, niin ohjelma asettaa viivekorjauksen itse.</span><button class="sec small" id="calib">Kalibroi</button></div>
+    <div class="small">Korjaa laitteen viiveen (Bluetooth-kuulokkeilla se on suuri) ja oman tapasi lyödä hieman klikin edellä tai jäljessä.</div></div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ---------- Asetukset ---------- */
+const DEF = {bpm:100, bar:0, sub:0, rush:25, drag:25, win:6, silence:8, glide:1, vol:80, flashOn:true, input:"mic", sens:55, latency:0};
+const UNITS = {bpm:" bpm", rush:" ms", drag:" ms", win:" iskua", silence:" iskua", glide:" bpm / 4 iskua", vol:" %", sens:"", latency:" ms"};
+let S = Object.assign({}, DEF);
+try { Object.assign(S, JSON.parse(localStorage.getItem("tempotreeni")||"{}")); } catch(e){}
+if (!(S.v >= 2)) S.sub = 0;     // v2: automaattinen ruudukko oletuksena
+if (!(S.v >= 3)) S.bar = 0;     // v3: aksentti pois oletuksena
+S.v = 3;
+const save = () => { try{ localStorage.setItem("tempotreeni", JSON.stringify(S)); }catch(e){} };
+save();
+
+for (const k in DEF) {
+  const el = $(k); if (!el) continue;
+  if (el.type === "checkbox") el.checked = S[k]; else el.value = S[k];
+  const out = $("o_"+k); if (out) out.textContent = S[k] + (UNITS[k]||"");
+  el.addEventListener("input", () => {
+    S[k] = el.type==="checkbox" ? el.checked : (k==="input" ? el.value : +el.value);
+    if (out) out.textContent = S[k] + (UNITS[k]||"");
+    save(); onSettingChanged(k);
+  });
+}
+function setLatency(ms){
+  S.latency = ms; $("latency").value = ms; $("o_latency").textContent = ms + UNITS.latency; save();
+}
+
+/* ---------- Tila ---------- */
+let ctx=null, worklet=null, micStream=null, wakeLock=null;
+let fileBuf=null, fileSrc=null;   // valittu äänitiedosto (ArrayBuffer) ja sen soitin
+let running=false, timer=null, raf=0;
+let nextBeatTime=0, beatSeq=0, beatLog=[];   // beatLog: ajastetut iskut {t, seq}
+let clickBpm=100;       // klikin nykyinen tempo (ohjauksen aikana eri kuin tavoite)
+let mode="guiding";     // "guiding" = klikki soi, "locked" = hiljaa, tavoitetempo pitää
+let level=0;            // klikin voimakkuus 0..1
+let hist=[];            // viimeisimmät virheet (ms), + = jäljessä
+let hits=[];            // viimeisimmät iskut {tc, k} tempon arviointiin
+let chartPts=[];
+let lastHitT=-Infinity, med=null;
+let flashQ=[], flashVal=0;
+let beatsTotal=0, beatsQuiet=0, absSum=0, absN=0;
+let lastLevel=0, lastHitFlashUntil=0;
+let calib=null;         // kalibrointi käynnissä: {offs}
+let catchLeft=0, catchUntil=0;   // klikin palattua se mukautuu soittajaan näin monta iskua ennen ohjausta
+let outDelayEst=null;   // kuinka paljon äänikello on edellä sitä, mikä juuri nyt kuuluu (s)
+
+const median = a => { const b=[...a].sort((x,y)=>x-y), n=b.length; return n%2? b[(n-1)/2] : (b[n/2-1]+b[n/2])/2; };
+const clamp = (v,a,b) => Math.min(b, Math.max(a,v));
+const stepMs = () => 60000 / S.bpm / (S.sub || 4);
+const tolRush = () => Math.min(S.rush, 0.4*stepMs());   // ei yli 40 % ruudukon välistä
+const tolDrag = () => Math.min(S.drag, 0.4*stepMs());
+const inBand = (m, f) => m >= -tolRush()*f && m <= tolDrag()*f;
+const converged = () => Math.abs(clickBpm - S.bpm) < 0.01;
+
+/* ---------- Ajoitus ---------- */
+// Äänikellon (currentTime) etumatka kuuluvaan ääneen, mitattuna selaimen omasta aikaleimasta.
+function measureOutDelay(){
+  const ts = ctx.getOutputTimestamp && ctx.getOutputTimestamp();
+  if (ts && ts.performanceTime > 0 && ts.contextTime > 0){
+    const L = ctx.currentTime - (ts.contextTime + (performance.now() - ts.performanceTime)/1000);
+    if (L > 0 && L < 1){ outDelayEst = outDelayEst === null ? L : outDelayEst*0.9 + L*0.1; return; }
+  }
+  if (outDelayEst === null) outDelayEst = ctx.outputLatency || ctx.baseLatency || 0;
+}
+const outDelay = () => outDelayEst === null ? (ctx.outputLatency || ctx.baseLatency || 0) : outDelayEst;
+// Klikin aikajanan kohta, joka kuului kuulokkeista hetkellä perfTs (performance.now-aikaa).
+function audibleAt(perfTs){
+  const ts = ctx.getOutputTimestamp && ctx.getOutputTimestamp();
+  if (ts && ts.performanceTime > 0 && ts.contextTime > 0) return ts.contextTime + (perfTs - ts.performanceTime)/1000;
+  return ctx.currentTime - outDelay() - (performance.now() - perfTs)/1000;
+}
+// Myöhäisin mahdollinen iskun aika juuri nyt (iskujen aikaleimat ovat klikin aikajanalla).
+const hitNow = () => S.input === "file" ? ctx.currentTime : ctx.currentTime - outDelay() - S.latency/1000;
+
+function onSettingChanged(k){
+  // tempoa vaihdettaessa klikki lähtee soittajan nykytemposta ja liukuu uuteen
+  if (k==="bpm" && running && !calib && mode==="locked" && hits.length >= 4) engage();
+  if (k==="sens") sendSens();
+  if (k==="input"){ if (running) stop(); updateInputUI(); }
+  if (k==="sens" || k==="input") drawMeter(lastLevel);
+}
+function updateInputUI(){
+  $("fileRow").style.display = S.input === "file" ? "" : "none";
+  $("micRow").style.display = S.input === "tap" ? "none" : "";
+  $("tap").style.display = S.input === "tap" ? "" : "none";
+}
+updateInputUI();
+$("file").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  fileBuf = f ? await f.arrayBuffer() : null;
+});
+
+/* ---------- Klikki ---------- */
+function playClick(time, accent, vol){
+  if (vol < 0.02) return;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = "sine";
+  o.frequency.value = accent ? 1800 : 1200;
+  const peak = (S.vol/100) * vol;
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.exponentialRampToValueAtTime(Math.max(peak,0.0002), time + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + 0.06);
+  o.connect(g).connect(ctx.destination);
+  o.start(time); o.stop(time + 0.08);
+}
+
+function updateGuide(bt){
+  if (calib){ clickBpm = S.bpm; level = 1; return; }
+  // hiljaisuus → klikki takaisin tavoitetempoon
+  if (bt - lastHitT > S.silence * 60 / clickBpm){
+    if (hist.length || raw.length) resetTracking();
+    if (mode === "locked") mode = "guiding";
+    catchLeft = 0;
+  }
+  if (mode === "locked") clickBpm = S.bpm;
+  else if (catchLeft > 0 && beatSeq < catchUntil){ /* klikki tarttuu vielä soittoon, ei liu'uta */ }
+  else {
+    catchLeft = 0;
+    // klikin tempo liukuu hitaasti kohti tavoitetta (S.glide bpm / 4 iskua)
+    const st = S.glide / 4;
+    clickBpm += clamp(S.bpm - clickBpm, -st, st);
+  }
+  const target = mode === "guiding" ? 1 : 0;
+  if (target > level) level = Math.min(target, level + 0.5);
+  else level = Math.max(target, level - 0.2);   // hiljenee pehmeästi ~5 iskussa
+  beatsTotal++; if (level < 0.03) beatsQuiet++;
+}
+
+function tick(){
+  const now = ctx.currentTime;
+  measureOutDelay();
+  if (pending){                            // edellinen isku (beat) päättyi → käsitellään sen iskut
+    const nb = beatAt(pending.seq + 1);
+    if (nb && hitNow() > nb.t + 0.03) finalizeBeat();
+  }
+  while (nextBeatTime < now + 0.15){
+    const bt = nextBeatTime;
+    updateGuide(bt);
+    beatLog.push({t: bt, seq: beatSeq}); if (beatLog.length > 64) beatLog.shift();
+    playClick(bt, S.bar > 0 && beatSeq % S.bar === 0, level);
+    flashQ.push({t: bt, lvl: level});
+    nextBeatTime = bt + 60 / clickBpm;
+    beatSeq++;
+  }
+}
+
+/* ---------- Iskut ---------- */
+// Ruudukkopisteet yhden iskun (beat) sisällä, 0 = tämä isku, 1 = seuraava isku.
+const GRIDS = {1:[0,1], 2:[0,1/2,1], 3:[0,1/3,2/3,1], 4:[0,1/4,1/2,3/4,1]};
+const snap = (u, g) => { const base = Math.floor(u), f = u - base;
+  return base + g.reduce((best, p) => Math.abs(f-p) < Math.abs(f-best) ? p : best); };
+const beatAt = seq => beatLog.find(b => b.seq === seq);
+let pending = null;     // saman iskun (beat) aikana tulleet iskut {seq, tcs}
+let raw = [];           // viimeisimpien iskujen ajat (tasaisen iskujonon tunnistus)
+let drift = 0, driftRate = 0, driftK = null;   // soittajan siirtymä klikistä (ms) ja sen muutos (ms/beat)
+let feel = 4;           // viimeksi tunnistettu tunnu: 4 = suorat, 3 = triolit
+let epoch = 0;          // kasvaa aina kun klikki synkronoidaan soittajaan
+
+function resetTracking(){
+  hist = []; hits = []; med = null; raw = []; pending = null;
+  drift = 0; driftRate = 0; driftK = null;
+}
+// Ennustettu siirtymä (ms) kohdassa k (beateissa).
+const predDrift = k => drift + (driftK === null ? 0 : driftRate * (k - driftK));
+
+// Paikka klikin ruudukossa: iskun (beat) alku ja kesto sekä siirtymällä korjattu paikka u (beateissa).
+function beatPos(tc){
+  let i = beatLog.length - 1;
+  while (i >= 0 && beatLog[i].t > tc) i--;
+  if (i < 0) return null;
+  const b = beatLog[i], nb = beatLog[i+1];
+  const dur = (nb ? nb.t : b.t + 60/clickBpm) - b.t;
+  const pr = predDrift(b.seq + (tc - b.t)/dur);
+  return {b, dur, pr, u: (tc - b.t - pr/1000) / dur};
+}
+
+// tc = iskun aika klikin aikajanalla (viiveet jo korjattu)
+function onHit(tc){
+  if (!running) return;
+  lastHitFlashUntil = performance.now() + 120;
+  if (calib){ calibHit(tc); return; }
+  const pos = beatPos(tc);
+  if (!pos) return;                        // ennen ensimmäistä klikkiä
+  lastHitT = tc;
+  raw.push(tc); if (raw.length > 8) raw.shift();
+  if (mode === "locked" && checkSteadyStream()) return;
+  const seq = pos.b.seq;
+  if (pending && pending.seq !== seq) finalizeBeat();
+  if (!pending) pending = {seq, tcs: []};
+  pending.tcs.push(tc);
+}
+
+// Kun isku (beat) on ohi, valitaan sen ruudukko ja mitataan iskujen virheet.
+// Automaattitilassa verrataan suoria 1/16-osia ja trioleja ja valitaan paremmin sopiva;
+// suora voittaa, ellei trioli sovi selvästi paremmin.
+function finalizeBeat(){
+  const p = pending; pending = null;
+  const ps = p.tcs.map(beatPos);
+  if (ps.some(x => !x)) return;
+  const us = ps.map(x => x.u);
+  let grid = GRIDS[S.sub], other = null;
+  if (!grid){
+    const cost = g => us.reduce((s,u) => s + (u - snap(u,g))**2, 0);
+    const offbeats = g => us.filter(u => { const q = snap(u,g); return Math.abs(q - Math.round(q)) > 1e-9; }).length;
+    grid = cost(GRIDS[3]) < 0.5 * cost(GRIDS[4]) ? GRIDS[3] : GRIDS[4];
+    // iskun alku on lähes aina soitettu: jos iskut selittyvät iskujen alkuina lähes yhtä hyvin,
+    // tulkitaan ne niin eikä synkoopeiksi (estää kiihtyvien 1/4-osien tulkinnan 1/16-osiksi)
+    if (cost(GRIDS[1]) <= cost(grid) + 0.03 * offbeats(grid)) grid = GRIDS[1];
+    else {
+      other = grid === GRIDS[3] ? GRIDS[4] : GRIDS[3];
+      feel = grid === GRIDS[3] ? 3 : 4;
+    }
+  }
+  const e0 = epoch, errs = [];
+  for (let n = 0; n < us.length && epoch === e0; n++){
+    const {b, dur, pr} = ps[n], u = us[n];
+    const q = snap(u, grid), d = Math.abs(u - q);
+    // epävarma isku (lähes yhtä lähellä toisen ruudukon pistettä) jätetään pois;
+    // iskun alku on yhteinen kaikille ruudukoille, joten se on aina varma
+    if (other && Math.abs(q - Math.round(q)) > 1e-9 && Math.abs(u - snap(u, other)) < d + 0.03) continue;
+    const k = b.seq + q;                   // iskun paikka beateissa
+    const r = (u - q) * dur * 1000;        // jäännös ennustetun siirtymän jälkeen
+    // siirtymän seuranta (alpha-beta): virhe kasvaa todelliseksi eikä hyppää seuraavaan ruudukkopisteeseen
+    const dk = driftK === null ? 1 : Math.min(1, k - driftK);
+    drift = pr + 0.5 * r;
+    driftRate += 0.25 * r * dk;
+    driftK = k;
+    errs.push(pr + r);
+    addHit(p.tcs[n], pr + r, k);
+  }
+  if (epoch === e0 && mode === "guiding" && catchLeft > 0 && errs.length) catchUp(errs.reduce((s,e) => s+e, 0) / errs.length / 1000);
+}
+
+// Klikin palattua: siirretään klikin vaihetta ja tempoa soittajaa kohti (e = soittajan
+// keskimääräinen poikkeama klikistä sekunteina, + = jäljessä). Alkuarvion virhe korjautuu
+// näin muutamassa iskussa pehmeästi.
+function catchUp(e){
+  catchLeft--;
+  const shift = Math.max(0.5 * e, ctx.currentTime + 0.01 - nextBeatTime);
+  nextBeatTime += shift;
+  clickBpm = 60 / (60 / clickBpm + 0.1 * e);     // tempoa korjataan varovasti, ettei vaihtelu heiluta sitä
+  drift -= shift * 1000; driftRate -= 100 * e;   // seuranta klikin uuteen ruudukkoon
+}
+
+function addHit(tc, err, k){
+  hist.push(err); if (hist.length > 32) hist.shift();
+  hits.push({tc, k}); if (hits.length > 16) hits.shift();
+  chartPts.push(err); if (chartPts.length > 40) chartPts.shift();
+  absSum += Math.abs(err); absN++;
+  evaluate();
+}
+
+function evaluate(){
+  if (hist.length < 3){ med = null; return; }
+  med = median(hist.slice(-S.win));
+  // kolme peräkkäistä iskua samaan suuntaan yli rajan ja poikkeama kasvaa = tempo karkaa
+  // (havaitaan ennen mediaania; satunnainen vaihtelu tuottaa tällaisen sarjan harvoin)
+  const l3 = hist.slice(-3);
+  const run3 = l3.length === 3 && Math.abs(l3[0]) < Math.abs(l3[1]) && Math.abs(l3[1]) < Math.abs(l3[2]) &&
+    (l3.every(e => e < -tolRush()) || l3.every(e => e > tolDrag()));
+  if (mode === "locked"){
+    if (!inBand(med, 1) || run3) engage();
+  } else if (converged() && hist.length >= S.win && inBand(med, 0.6)){
+    mode = "locked";                       // klikki hiljenee, ruudukko pysyy
+  }
+}
+
+// Tasainen iskujono (esim. 1/4- tai 1/8-osia) selvästi eri tempossa kuin klikki:
+// tempo vaihtui nopeammin kuin siirtymän seuranta ehtii, joten tempo luetaan iskujen väleistä.
+// Väli lasketaan neljän välin keskiarvona, jottei ihmisen luonnollinen vaihtelu laukaise sitä.
+function checkSteadyStream(){
+  if (raw.length < 5) return false;
+  const r = raw.slice(-5), iois = r.slice(1).map((t,i) => t - r[i]);
+  if (Math.max(...iois) / Math.min(...iois) > 1.2) return false;
+  const ioi = (r[4] - r[0]) / 4;
+  const P0 = 60 / clickBpm;
+  const mult = S.sub === 1 ? [1] : S.sub === 2 ? [1,2] : (S.sub === 3 || (!S.sub && feel === 3)) ? [1,3] : [1,2,4];
+  const dist = P => Math.abs(Math.log(P / P0));
+  const P = mult.map(m => ioi*m).reduce((a,b) => dist(a) <= dist(b) ? a : b);
+  if (dist(P) < Math.log(1.07) || !(60/P > 30 && 60/P < 300)) return false;
+  // osuvatko iskut silti klikin ruudukkoon (esim. pisteelliset rytmit)? → rytmi, ei tempon muutos
+  const grids = GRIDS[S.sub] ? [GRIDS[S.sub]] : [GRIDS[4], GRIDS[3]];
+  const tol = Math.max(tolRush(), tolDrag());
+  if (r.every(tc => { const x = beatPos(tc); return x && Math.min(...grids.map(g => Math.abs(x.u - snap(x.u, g)))) * x.dur * 1000 < tol; }))
+    return false;
+  startGuiding(r[4], P);
+  return true;
+}
+
+// Suora sovitus aika vs. paikka beateissa; decay < 1 painottaa tuoreimpia iskuja.
+function fitLine(h, decay){
+  if (h.length < 4) return null;
+  const w = h.map((_, i) => Math.pow(decay, h.length - 1 - i));
+  const W = w.reduce((s,x)=>s+x, 0);
+  const mk = h.reduce((s,x,i)=>s+w[i]*x.k,0)/W, mt = h.reduce((s,x,i)=>s+w[i]*x.tc,0)/W;
+  let sxx = 0, sxy = 0;
+  h.forEach((x,i) => { sxx += w[i]*(x.k-mk)**2; sxy += w[i]*(x.k-mk)*(x.tc-mt); });
+  if (sxx < 1e-9) return null;
+  const b = sxy / sxx;                     // sekuntia per beat
+  return b > 0 ? {a: mt - b*mk, b} : null;
+}
+// Toisen asteen sovitus t = a + b·x + c·x², x = k − viimeisimmän iskun k (painot w).
+function solveQuad(h, w){
+  const k0 = h[h.length-1].k, X = h.map(p => [1, p.k - k0, (p.k - k0)**2]);
+  const A = [[0,0,0],[0,0,0],[0,0,0]], y = [0,0,0];
+  X.forEach((x,i) => { for (let r=0;r<3;r++){ y[r] += w[i]*x[r]*h[i].tc; for (let c=0;c<3;c++) A[r][c] += w[i]*x[r]*x[c]; } });
+  const inv = inv3(A); if (!inv) return null;
+  const [a, b, c] = [0,1,2].map(r => inv[r][0]*y[0] + inv[r][1]*y[1] + inv[r][2]*y[2]);
+  return {a, b, c, k0, X, inv};
+}
+// Palauttaa null, ellei tempon muutos ole tilastollisesti selvä (silloin suora on vakaampi).
+// Muutoksen olemassaolo testataan tasapainoisella sovituksella (|c| > minSig keskihajontaa,
+// dir = vaadittu suunta: −1 kiihtyy, +1 hidastuu), nykyinen tempo luetaan tuoreimpia iskuja
+// painottavasta sovituksesta.
+function fitQuad(h, minSig, dir){
+  const n = h.length;
+  if (n < 6 || h[n-1].k - h[0].k < 5) return null;   // lyhyestä jaksosta käyrä on epävakaa
+  const u = solveQuad(h, h.map(() => 1)); if (!u) return null;
+  const ssr = u.X.reduce((s,x,i) => s + (h[i].tc - (u.a + u.b*x[1] + u.c*x[2]))**2, 0);
+  if (Math.abs(u.c) <= minSig * Math.sqrt(ssr / (n - 3) * u.inv[2][2])) return null;
+  if (dir && Math.sign(u.c) !== dir) return null;
+  return solveQuad(h, h.map((_, i) => Math.pow(0.7, n - 1 - i)));
+}
+function inv3(m){
+  const [[a,b,c],[d,e,f],[g,h,i]] = m;
+  const A = e*i-f*h, B = -(d*i-f*g), C = d*h-e*g, det = a*A + b*B + c*C;
+  if (Math.abs(det) < 1e-12) return null;
+  return [[A, -(b*i-c*h), b*f-c*e], [B, a*i-c*g, -(a*f-c*d)], [C, -(a*h-b*g), a*e-b*d]].map(r => r.map(v => v/det));
+}
+// Soittajan pulssit: aika kohdassa k (beateissa) ja pulssin väli siinä kohdassa.
+function playerModel(){
+  const lin = fitLine(hits.slice(-10), 0.7);
+  if (!lin) return null;
+  // Klikin palatessa tiedetään jo, mihin suuntaan soittaja on karannut (kiirehtii → tempo kiihtyy),
+  // joten samansuuntainen tempon muutos hyväksytään lievemmälläkin näytöllä.
+  const h = hits.slice(-12);
+  const dir = Math.sign(hist.slice(-3).reduce((s,e) => s + e, 0));
+  const q = fitQuad(h, 3) || (dir ? fitQuad(h, 1.5, dir) : null);
+  // käyrää käytetään vain, jos sen antama nykyinen tempo on järkevä suoraan verrattuna
+  if (q && q.b > 0.7*lin.b && q.b < 1.4*lin.b)
+    return {t: k => q.a + q.b*(k-q.k0) + q.c*(k-q.k0)**2, p: k => Math.max(0.7*q.b, Math.min(1.4*q.b, q.b + 2*q.c*(k-q.k0))), kLast: q.k0};
+  // vaihe kiinnitetään viimeisimpiin iskuihin, kulmakerroin koko sovituksesta
+  const r = hits.slice(-3), a = r.reduce((s,x) => s + x.tc - lin.b*x.k, 0) / r.length;
+  return {t: k => a + lin.b*k, p: () => lin.b, kLast: hits[hits.length-1].k};
+}
+function playerBpm(){
+  const h = hits.slice(-12);
+  if (h.length < 8 || h[h.length-1].k - h[0].k < 4) return null;
+  const f = fitLine(h, 1);
+  return f ? 60 / f.b : null;
+}
+
+function engage(){
+  const m = playerModel();
+  if (!m){ startGuiding(null); return; }
+  // soittajan seuraava pulssi, joka ehditään vielä ajastaa
+  const last = beatLog.length ? beatLog[beatLog.length-1].t : 0;
+  let K = Math.ceil(m.kLast - 1e-9);
+  while (K < m.kLast + 8 && m.t(K) < Math.max(last + 0.5*m.p(K), ctx.currentTime + 0.03)) K++;
+  startGuiding(m.t(K), m.p(K));
+}
+
+// Klikki palaa soittajan omassa tempossa ja vaiheessa: T = soittajan pulssin aika,
+// P = pulssin väli sekunteina. Sen jälkeen klikki liukuu tavoitetempoon.
+function startGuiding(T, P){
+  mode = "guiding"; epoch++; catchLeft = 0;
+  resetTracking();
+  if (T == null || !(60/P > 30 && 60/P < 300)) return;
+  clickBpm = 60 / P;
+  catchLeft = 4; catchUntil = beatSeq + 8;
+  const last = beatLog.length ? beatLog[beatLog.length-1].t : 0;
+  const minT = Math.max(last + 0.5*P, ctx.currentTime + 0.03);
+  // ensimmäinen soittajan pulssi, joka on vielä edessä (ei koskaan pitkälle tulevaisuuteen)
+  nextBeatTime = T + P * Math.ceil((minT - T) / P);
+}
+
+/* ---------- Kalibrointi ---------- */
+// Klikki soi tasaisesti; 4 iskun sisäänlaskun jälkeen mitataan 16 iskun poikkeama lähimmästä klikistä.
+function calibHit(tc){
+  let best = null;
+  for (const b of beatLog) if (!best || Math.abs(b.t - tc) < Math.abs(best.t - tc)) best = b;
+  if (!best || best.seq < 4) return;
+  calib.offs.push((tc - best.t) * 1000 + S.latency);
+  if (calib.offs.length < 16) return;
+  const m = Math.round(median(calib.offs));
+  stop();
+  if (Math.abs(m) > 150){
+    $("hint").textContent = "Kalibrointi ei onnistunut (poikkeama " + m + " ms). Yritä uudelleen ja soita tasan klikin kanssa.";
+    return;
+  }
+  setLatency(m);
+  $("hint").textContent = "Viivekorjaus asetettu: " + (m > 0 ? "+" : "") + m + " ms. Paina Aloita.";
+}
+$("calib").addEventListener("click", async e => {
+  e.currentTarget.blur();
+  if (S.input === "file"){ $("hint").textContent = "Kalibrointi toimii mikrofonilla tai napautuksella."; return; }
+  if (running) stop();
+  calib = {offs: []};
+  await start();
+});
+
+/* ---------- Syöte ---------- */
+const WORKLET = `
+class Onset extends AudioWorkletProcessor{
+  constructor(){ super(); this.thr=0.02; this.slow=0; this.x1=0; this.last=-1; this.n=0; this.pk=0;
+    this.port.onmessage = e => { if (e.data.thr!==undefined) this.thr=e.data.thr; }; }
+  process(inputs){
+    const ch = inputs[0] && inputs[0][0]; if (!ch) return true;
+    let s=0; for (let i=0;i<ch.length;i++){ const y=ch[i]-this.x1; this.x1=ch[i]; s+=y*y; }
+    const rms = Math.sqrt(s/ch.length);
+    if (rms > this.pk) this.pk = rms;
+    if (rms > this.thr && rms > this.slow*2.5 && currentTime - this.last > 0.09){
+      this.last = currentTime; this.port.postMessage({hit: currentTime});
+    }
+    this.slow = this.slow*0.97 + rms*0.03;
+    if (++this.n % 12 === 0){ this.port.postMessage({lvl: this.pk}); this.pk = 0; }
+    return true;
+  }
+}
+registerProcessor("onset", Onset);`;
+
+const thrFromSens = s => 0.3 * Math.pow(0.01, s/100);
+function sendSens(){ if (worklet) worklet.port.postMessage({thr: thrFromSens(S.sens)}); }
+
+// Palauttaa false, jos syötettä ei saatu käyttöön.
+async function setupInput(){
+  teardownInput();
+  if (S.input === "tap") return true;
+  const isFile = S.input === "file";
+  try{
+    if (isFile && !fileBuf) throw new Error("valitse ensin äänitiedosto");
+    if (!ctx.audioWorklet) throw new Error("AudioWorklet ei tuettu");
+    const url = URL.createObjectURL(new Blob([WORKLET], {type:"application/javascript"}));
+    await ctx.audioWorklet.addModule(url);
+    worklet = new AudioWorkletNode(ctx, "onset", {numberOfOutputs:0});
+    worklet.port.onmessage = e => {
+      // tiedosto kulkee suoraan tunnistimeen ilman viiveitä; mikrofonin isku kuului kuulokkeista outDelay myöhemmin
+      if (e.data.hit !== undefined) onHit(isFile ? e.data.hit : e.data.hit - outDelay() - S.latency/1000);
+      if (e.data.lvl !== undefined) lastLevel = e.data.lvl;
+    };
+    sendSens();
+    if (isFile){
+      fileSrc = ctx.createBufferSource();
+      fileSrc.buffer = await ctx.decodeAudioData(fileBuf.slice(0));
+      const g = ctx.createGain(); g.gain.value = 0.6;
+      fileSrc.connect(worklet); fileSrc.connect(g).connect(ctx.destination);
+    } else {
+      micStream = await navigator.mediaDevices.getUserMedia({audio:{
+        echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1}});
+      ctx.createMediaStreamSource(micStream).connect(worklet);
+    }
+    return true;
+  }catch(err){
+    $("hint").textContent = (isFile ? "Äänitiedosto ei käytössä (" : "Mikrofoni ei käytössä (") + (err.message||err.name) + ").";
+    return false;
+  }
+}
+function teardownInput(){
+  if (micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
+  if (fileSrc){ try{ fileSrc.onended = null; fileSrc.stop(); }catch(e){} fileSrc.disconnect(); fileSrc=null; }
+  if (worklet){ worklet.disconnect(); worklet=null; }
+  lastLevel = 0;
+}
+
+/* ---------- Käynnistys ---------- */
+async function start(){
+  ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
+  await ctx.resume();
+  running = true; level = 1; mode = "guiding"; clickBpm = S.bpm; outDelayEst = null; catchLeft = 0;
+  resetTracking(); chartPts = []; beatLog = []; feel = 4;
+  lastHitT = -Infinity; flashQ = []; beatsTotal = beatsQuiet = absSum = absN = 0;
+  $("go").textContent = "Lopeta"; $("go").classList.add("stop");
+  // mikrofonin lupa ja tiedoston purku ennen ensimmäistä klikkiä
+  const ok = await setupInput();
+  if (!running) return;
+  if (!ok && S.input === "file"){ const h = $("hint").textContent; stop(); $("hint").textContent = h; return; }
+  nextBeatTime = ctx.currentTime + 0.5; beatSeq = 0;
+  if (fileSrc){
+    fileSrc.onended = () => { if (running){ stop(); $("hint").textContent = "Tiedosto loppui."; } };
+    fileSrc.start(nextBeatTime);           // tiedoston alku = ensimmäinen klikki
+  }
+  timer = setInterval(tick, 25); tick();
+  if (ok) $("hint").textContent = calib ? "Kalibrointi: soita tai naputa 1/4-osia klikin mukana."
+    : S.input === "tap" ? "Napauta tai paina välilyöntiä tempoon."
+    : S.input === "file" ? "Soitetaan tiedostoa." : "Kuuntele klikkiä ja aloita soitto.";
+  try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){}
+  raf = requestAnimationFrame(frame);
+}
+function stop(){
+  running = false; calib = null; clearInterval(timer); cancelAnimationFrame(raf);
+  teardownInput();
+  if (ctx){ ctx.close(); ctx = null; }
+  try{ wakeLock && wakeLock.release(); }catch(e){}
+  $("go").textContent = "Aloita"; $("go").classList.remove("stop");
+  $("stage").className = "stage"; $("state").textContent = "Pysäytetty";
+  flashVal = 0; $("flash").style.opacity = 0;
+  $("hint").textContent = "Aseta tempo ja paina Aloita. Käytä kuulokkeita.";
+}
+$("go").addEventListener("click", e => { e.currentTarget.blur(); running ? stop() : start(); });
+
+/* napautus / välilyönti: painalluksen tarkka aikaleima muunnetaan klikin aikajanalle */
+function tapHit(e){
+  if (!running || S.input !== "tap") return;
+  onHit(audibleAt(e.timeStamp) - S.latency/1000);
+}
+$("tap").addEventListener("pointerdown", e => { e.preventDefault(); tapHit(e); });
+$("stage").addEventListener("pointerdown", tapHit);
+addEventListener("keydown", e => {
+  if (e.code === "Space" && !e.repeat && e.target === document.body){ e.preventDefault(); tapHit(e); }
+});
+
+/* ---------- Näyttö ---------- */
+const fmt = v => (v>0?"+":"") + Math.round(v) + " ms";
+const fmtBpm = v => v.toFixed(1).replace(".", ",");
+
+function frame(){
+  if (!running) return;
+  const now = audibleAt(performance.now());
+  while (flashQ.length && flashQ[0].t <= now){
+    const f = flashQ.shift();
+    if (S.flashOn && f.lvl > 0.05) flashVal = f.lvl * 0.7;
+  }
+  flashVal *= 0.86;
+  $("flash").style.opacity = flashVal.toFixed(3);
+
+  const stage = $("stage");
+  if (calib){
+    stage.className = "stage";
+    $("state").textContent = "Kalibrointi";
+    $("drift").textContent = calib.offs.length + " / 16";
+  } else if (mode === "guiding" && !converged()){
+    stage.className = "stage late";
+    $("state").textContent = catchLeft > 0 ? "Klikki tarttuu soittoosi" : "Klikki ohjaa tempoa";
+    $("drift").textContent = fmtBpm(clickBpm);
+    $("hint").textContent = "Seuraa klikkiä: " + fmtBpm(clickBpm) + " → " + S.bpm + " bpm";
+  } else if (med === null){
+    stage.className = "stage";
+    $("state").textContent = level >= 0.05 ? "Klikki soi" : "Kuuntelen";
+    $("drift").textContent = "–";
+    if (hist.length) $("hint").textContent = "Kerään iskuja…";
+  } else if (mode === "locked"){
+    stage.className = "stage ok";
+    $("state").textContent = "Tempossa – hiljaa";
+    $("drift").textContent = fmt(med);
+    $("hint").textContent = "Pysy tässä. Klikki palaa, jos tempo karkaa.";
+  } else {
+    const late = med > 0;
+    stage.className = "stage " + (inBand(med,1) ? "" : (late ? "late" : "early"));
+    $("state").textContent = inBand(med,1) ? "Klikki ohjaa takaisin" : (late ? "Laahaat – klikki soi" : "Kiirehdit – klikki soi");
+    $("drift").textContent = fmt(med);
+    $("hint").textContent = inBand(med,1) ? "Melkein – pysy tasaisena, klikki hiljenee." : (late ? "Hieman nopeammin." : "Hieman rauhallisemmin.");
+  }
+  const pb = calib ? null : playerBpm();
+  $("sMed").textContent = med===null ? "–" : fmt(med);
+  $("sBpm").textContent = pb === null ? "–" : fmtBpm(pb);
+  $("sAbs").textContent = absN ? Math.round(absSum/absN) + " ms" : "–";
+  $("sQuiet").textContent = beatsTotal ? Math.round(100*beatsQuiet/beatsTotal) + " %" : "–";
+  drawMeter(lastLevel); drawChart();
+  raf = requestAnimationFrame(frame);
+}
+
+const meterPos = v => clamp((Math.log10(Math.max(v,1e-4)) + 3.5) / 3.2, 0, 1);
+function drawMeter(v){
+  $("lvl").style.width = (meterPos(v)*100) + "%";
+  $("lvl").style.background = performance.now() < lastHitFlashUntil ? "var(--ok)" : "var(--accent)";
+  $("thr").style.left = (meterPos(thrFromSens(S.sens))*100) + "%";
+}
+drawMeter(0);
+
+const cv = $("chart"), c2 = cv.getContext("2d");
+function drawChart(){
+  const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w*dpr || cv.height !== h*dpr){ cv.width = w*dpr; cv.height = h*dpr; }
+  c2.setTransform(dpr,0,0,dpr,0,0); c2.clearRect(0,0,w,h);
+  const range = Math.max(tolRush(), tolDrag()) * 2.2;
+  const y = ms => h/2 + clamp(ms/range, -1, 1) * (h/2 - 8);
+  const css = getComputedStyle(document.documentElement);
+  c2.strokeStyle = css.getPropertyValue("--line"); c2.lineWidth = 1;
+  c2.beginPath(); c2.moveTo(0,y(0)); c2.lineTo(w,y(0)); c2.stroke();
+  c2.setLineDash([5,4]); c2.strokeStyle = css.getPropertyValue("--warn");
+  for (const v of [tolDrag(), -tolRush()]){ c2.beginPath(); c2.moveTo(0,y(v)); c2.lineTo(w,y(v)); c2.stroke(); }
+  c2.setLineDash([]);
+  const n = 40, dx = w / n;
+  chartPts.forEach((v,i) => {
+    const x = (n - chartPts.length + i + 0.5) * dx;
+    c2.fillStyle = css.getPropertyValue(inBand(v,1) ? "--ok" : "--warn");
+    c2.beginPath(); c2.arc(x, y(v), 4, 0, 7); c2.fill();
+  });
+  if (med !== null){ c2.strokeStyle = css.getPropertyValue("--accent"); c2.lineWidth = 2;
+    c2.beginPath(); c2.moveTo(0,y(med)); c2.lineTo(w,y(med)); c2.stroke(); }
+}
+drawChart();
+addEventListener("resize", drawChart);
+</script>
+</body>
+</html>
