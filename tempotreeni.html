@@ -79,7 +79,8 @@ h2{font-size:14px;color:var(--dim);margin:18px 0 0;font-weight:600;text-transfor
 
 <div class="settings" id="settings">
   <h2 style="margin-top:8px">Tempo</h2>
-  <div class="set"><label>Tempo <output id="o_bpm"></output></label><input type="range" id="bpm" min="30" max="240" step="1"></div>
+  <div class="set"><label>Tempo <output id="o_bpm"></output></label><input type="range" id="bpm" min="30" max="240" step="1">
+    <div class="inline" style="margin-top:8px"><span class="small">Tai napauta tempo painikkeesta (tietokoneella myös T-näppäin) vähintään 4 kertaa tasaisesti.</span><button class="sec small" id="tapTempo">Naputa tempo</button></div></div>
   <div class="set"><label>Alkuklikki <output id="o_intro"></output></label><input type="range" id="intro" min="0" max="64" step="1">
     <div class="small">Klikki soi aloittaessa vähintään näin monta iskua, jotta pääset tempoon sisälle. Sen jälkeen se hiljenee, kun soitat tempossa.</div></div>
   <div class="set"><div class="inline"><span>Aksentti</span>
@@ -132,6 +133,7 @@ if (!(S.v >= 2)) S.sub = 0;     // v2: automaattinen ruudukko oletuksena
 if (!(S.v >= 3)) S.bar = 0;     // v3: aksentti pois oletuksena
 for (const k of ["rush", "drag", "win"]) delete S[k];   // v4: toleranssit ms → bpm
 S.v = 4;
+for (const k in DEF) if (typeof DEF[k] === "number" && !Number.isFinite(S[k])) S[k] = DEF[k];   // virheelliset luvut oletukseksi
 const save = () => { try{ localStorage.setItem("tempotreeni", JSON.stringify(S)); }catch(e){} };
 save();
 
@@ -632,6 +634,34 @@ $("tap").addEventListener("pointerdown", e => { e.preventDefault(); tapHit(e); }
 $("stage").addEventListener("pointerdown", tapHit);
 addEventListener("keydown", e => {
   if (e.code === "Space" && !e.repeat && e.target === document.body){ e.preventDefault(); tapHit(e); }
+});
+
+/* ---------- Tempon antaminen napauttamalla ---------- */
+// Tempo lasketaan napautusten väleistä; yksittäinen huti (yli 25 % mediaanista) jätetään pois.
+// Yli 2 s tauko aloittaa uuden laskennan.
+let tempoTaps = [], tapTempoTimer = 0;
+function tapTempo(ts){
+  const gap = tempoTaps.length ? ts - tempoTaps[tempoTaps.length-1] : Infinity;
+  if (gap < 200) return;                   // tuplanapautus (esim. kosketusnäytön kaksoistapahtuma)
+  if (gap > 2000) tempoTaps = [];          // tauko (tai ajan hyppy) → uusi laskenta
+  tempoTaps.push(ts); if (tempoTaps.length > 9) tempoTaps.shift();
+  clearTimeout(tapTempoTimer);
+  tapTempoTimer = setTimeout(() => { $("tapTempo").textContent = "Naputa tempo"; }, 3000);
+  const n = tempoTaps.length;
+  if (n < 2){ $("tapTempo").textContent = "Napauta lisää…"; return; }
+  const iv = tempoTaps.slice(1).map((t,i) => t - tempoTaps[i]);
+  const m = median(iv), ok = iv.filter(x => Math.abs(x - m) <= 0.25*m);
+  const mean = ok.length ? ok.reduce((s,x) => s+x, 0) / ok.length : m;
+  const bpm = Math.round(clamp(60000 / mean, 30, 240));
+  if (!Number.isFinite(bpm)) return;
+  $("tapTempo").textContent = bpm + " bpm (" + n + ")";
+  if (bpm === S.bpm) return;
+  S.bpm = bpm; $("bpm").value = bpm; $("o_bpm").textContent = bpm + UNITS.bpm; save();
+  onSettingChanged("bpm");
+}
+$("tapTempo").addEventListener("pointerdown", e => { e.preventDefault(); tapTempo(e.timeStamp); });
+addEventListener("keydown", e => {
+  if (e.code === "KeyT" && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && e.target === document.body) tapTempo(e.timeStamp);
 });
 
 /* ---------- Näyttö ---------- */

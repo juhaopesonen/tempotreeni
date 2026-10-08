@@ -2,6 +2,7 @@
 
 Selaimessa toimiva harjoitusohjelma rumpalille tai muusikolle, joka haluaa treenata sisäistä tempoaan.
 
+- Tempon voi asettaa liukurilla tai napauttamalla (Naputa tempo -painike tai T-näppäin).
 - Klikki soi aluksi asetetussa tempossa valitsemasi määrän iskuja (alkuklikki). Kun soitat tempossa, se hiljenee.
 - Ohjelma mittaa tempoasi viimeisten iskujen ajalta. Jos se poikkeaa asetetusta enemmän kuin sallit (esim. +3 / −3 bpm), klikki palaa kuuluviin **sinun senhetkisessä tempossasi**, tarttuu soittoosi ja liukuu sitten hitaasti takaisin asetettuun tempoon.
 - Iskut tunnistetaan mikrofonilla. Vaihtoehtoina ovat myös napautus/välilyönti ja äänitiedosto (testaukseen).
