@@ -80,6 +80,8 @@ h2{font-size:14px;color:var(--dim);margin:18px 0 0;font-weight:600;text-transfor
 <div class="settings" id="settings">
   <h2 style="margin-top:8px">Tempo</h2>
   <div class="set"><label>Tempo <output id="o_bpm"></output></label><input type="range" id="bpm" min="30" max="240" step="1"></div>
+  <div class="set"><label>Alkuklikki <output id="o_intro"></output></label><input type="range" id="intro" min="0" max="64" step="1">
+    <div class="small">Klikki soi aloittaessa vähintään näin monta iskua, jotta pääset tempoon sisälle. Sen jälkeen se hiljenee, kun soitat tempossa.</div></div>
   <div class="set"><div class="inline"><span>Aksentti</span>
     <select id="bar"><option value="0">Ei aksenttia</option><option value="2">joka 2. isku</option><option value="3">joka 3. isku</option><option value="4">joka 4. isku</option><option value="5">joka 5. isku</option><option value="6">joka 6. isku</option><option value="7">joka 7. isku</option></select></div></div>
   <div class="set"><div class="inline"><span>Iskujen vertailuruudukko</span>
@@ -121,8 +123,8 @@ h2{font-size:14px;color:var(--dim);margin:18px 0 0;font-weight:600;text-transfor
 const $ = id => document.getElementById(id);
 
 /* ---------- Asetukset ---------- */
-const DEF = {bpm:100, bar:0, sub:0, rushBpm:3, dragBpm:3, winBeats:6, silence:8, glide:1, vol:80, flashOn:true, input:"mic", sens:55, latency:0};
-const UNITS = {bpm:" bpm", rushBpm:" bpm", dragBpm:" bpm", winBeats:" iskua", silence:" iskua", glide:" bpm / 4 iskua", vol:" %", sens:"", latency:" ms"};
+const DEF = {bpm:100, intro:8, bar:0, sub:0, rushBpm:3, dragBpm:3, winBeats:6, silence:8, glide:1, vol:80, flashOn:true, input:"mic", sens:55, latency:0};
+const UNITS = {bpm:" bpm", intro:" iskua", rushBpm:" bpm", dragBpm:" bpm", winBeats:" iskua", silence:" iskua", glide:" bpm / 4 iskua", vol:" %", sens:"", latency:" ms"};
 const fmtNum = v => String(v).replace(".", ",");
 let S = Object.assign({}, DEF);
 try { Object.assign(S, JSON.parse(localStorage.getItem("tempotreeni")||"{}")); } catch(e){}
@@ -388,7 +390,7 @@ function evaluate(){
   const dev = cur.bpm - S.bpm;             // + = soitat nopeammin kuin asetettu tempo
   if (mode === "locked"){
     if (!inTol(dev, 1)) engage();          // tempo karkasi yli rajan → klikki palaa soittajan tempoon
-  } else if (converged() && cur.full && inTol(dev, 0.6)){
+  } else if (converged() && cur.full && inTol(dev, 0.6) && beatSeq >= S.intro){   // alkuklikki ensin
     mode = "locked";                       // klikki hiljenee
   }
 }
@@ -658,6 +660,11 @@ function frame(){
     $("state").textContent = catchLeft > 0 ? "Klikki tarttuu soittoosi" : "Klikki ohjaa tempoa";
     $("drift").textContent = fmtBpm(clickBpm);
     $("hint").textContent = "Seuraa klikkiä: " + fmtBpm(clickBpm) + " → " + S.bpm + " bpm";
+  } else if (mode === "guiding" && beatSeq < S.intro){
+    stage.className = "stage";
+    $("state").textContent = "Alkuklikki";
+    $("drift").textContent = Math.min(beatSeq, S.intro) + " / " + S.intro;
+    $("hint").textContent = "Soita klikin mukana. Sen jälkeen klikki hiljenee, kun olet tempossa.";
   } else if (dev === null){
     stage.className = "stage";
     $("state").textContent = level >= 0.05 ? "Klikki soi" : "Kuuntelen";
@@ -671,9 +678,9 @@ function frame(){
   } else {
     const fast = dev > 0, near = inTol(dev, 1);
     stage.className = "stage " + (near ? "" : (fast ? "early" : "late"));
-    $("state").textContent = near ? "Klikki ohjaa takaisin" : (fast ? "Kiirehdit – klikki soi" : "Laahaat – klikki soi");
+    $("state").textContent = near ? "Klikki soi" : (fast ? "Kiirehdit – klikki soi" : "Laahaat – klikki soi");
     $("drift").textContent = fmtDev(dev);
-    $("hint").textContent = near ? "Melkein – pysy tasaisena, klikki hiljenee." : (fast ? "Hieman rauhallisemmin." : "Hieman nopeammin.");
+    $("hint").textContent = near ? "Pysy tasaisena, niin klikki hiljenee." : (fast ? "Hieman rauhallisemmin." : "Hieman nopeammin.");
   }
   const show = cur && !calib;
   $("sBpm").textContent = show ? fmtBpm(cur.bpm) : "–";
