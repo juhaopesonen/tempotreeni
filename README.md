@@ -3,7 +3,7 @@
 Selaimessa toimiva harjoitusohjelma rumpalille tai muusikolle, joka haluaa treenata sisäistä tempoaan.
 
 - Klikki soi aluksi asetetussa tempossa. Kun soitat tarpeeksi tarkasti, se hiljenee.
-- Jos alat kiirehtiä tai laahata yli asettamasi rajan, klikki palaa kuuluviin **sinun senhetkisessä tempossasi**, tarttuu soittoosi ja liukuu sitten hitaasti takaisin asetettuun tempoon.
+- Ohjelma mittaa tempoasi viimeisten iskujen ajalta. Jos se poikkeaa asetetusta enemmän kuin sallit (esim. +3 / −3 bpm), klikki palaa kuuluviin **sinun senhetkisessä tempossasi**, tarttuu soittoosi ja liukuu sitten hitaasti takaisin asetettuun tempoon.
 - Iskut tunnistetaan mikrofonilla. Vaihtoehtoina ovat myös napautus/välilyönti ja äänitiedosto (testaukseen).
 - Vertailuruudukko voi olla automaattinen (suorat 1/8- ja 1/16-osat tai triolit/shuffle) tai käsin valittu.
 
