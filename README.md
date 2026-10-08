@@ -25,5 +25,8 @@ Kansiossa `testiaanet/` on syntetisoituja rumpunauhoituksia, joiden todellinen t
 | `shuffle_laahaa_100_94.wav` | shuffle, hidastuu 100 → 94 bpm |
 | `neljasosat_100_tasainen.wav` | pelkät 1/4-osat, tasainen 100 bpm |
 | `neljasosat_kiihtyy_100_115.wav` | pelkät 1/4-osat, kiihtyy 100 → 115 bpm |
+| `fillit_80_tasainen.wav` | 1/8-komppi 80 bpm, kuusi erilaista lyhyttä filliä (1/16, 1/16-triolit, 1/32-rulla, kiirehtivä, flamit, 1/8-triolit) |
+| `fillit_80_hyppy.wav` | kuten edellä, mutta komppi jatkuu fillin jälkeen 60–120 ms aiemmin tai myöhemmin samassa tempossa |
+| `fillit_80_kiihtyy_86.wav` | fillit ja tempo kiihtyy lopussa 80 → 86 bpm |
 
-Valitse syötteeksi **Äänitiedosto (testi)** ja tempoksi 100 bpm. Tiedoston alku soi yhtä aikaa ensimmäisen klikin kanssa.
+Valitse syötteeksi **Äänitiedosto (testi)** ja tempoksi tiedoston alkutempo (100 tai 80 bpm). Tiedoston alku soi yhtä aikaa ensimmäisen klikin kanssa.

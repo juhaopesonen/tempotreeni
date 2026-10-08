@@ -118,6 +118,7 @@ h2{font-size:14px;color:var(--dim);margin:18px 0 0;font-weight:600;text-transfor
     <div class="inline" style="margin-top:8px"><span class="small">Kalibrointi: soita tai naputa 16 neljäsosaa klikin mukana, niin ohjelma asettaa viivekorjauksen itse.</span><button class="sec small" id="calib">Kalibroi</button></div>
     <div class="small">Korjaa laitteen viiveen (Bluetooth-kuulokkeilla se on suuri) ja oman tapasi lyödä hieman klikin edellä tai jäljessä.</div></div>
 </div>
+<div class="small" style="margin-top:12px;text-align:center">Versio 2026-10-08c</div>
 
 <script>
 "use strict";
@@ -278,7 +279,6 @@ const beatAt = seq => beatLog.find(b => b.seq === seq);
 let pending = null;     // saman iskun (beat) aikana tulleet iskut {seq, tcs}
 let raw = [];           // viimeisimpien iskujen ajat (tasaisen iskujonon tunnistus)
 let drift = 0, driftRate = 0, driftK = null;   // soittajan siirtymä klikistä (ms) ja sen muutos (ms/beat)
-let feel = 4;           // viimeksi tunnistettu tunnu: 4 = suorat, 3 = triolit
 let epoch = 0;          // kasvaa aina kun klikki synkronoidaan soittajaan
 
 function resetTracking(){
@@ -332,10 +332,7 @@ function finalizeBeat(){
     // iskun alku on lähes aina soitettu: jos iskut selittyvät iskujen alkuina lähes yhtä hyvin,
     // tulkitaan ne niin eikä synkoopeiksi (estää kiihtyvien 1/4-osien tulkinnan 1/16-osiksi)
     if (cost(GRIDS[1]) <= cost(grid) + 0.03 * offbeats(grid)) grid = GRIDS[1];
-    else {
-      other = grid === GRIDS[3] ? GRIDS[4] : GRIDS[3];
-      feel = grid === GRIDS[3] ? 3 : 4;
-    }
+    else other = grid === GRIDS[3] ? GRIDS[4] : GRIDS[3];
   }
   const e0 = epoch, errs = [];
   for (let n = 0; n < us.length && epoch === e0; n++){
@@ -438,16 +435,19 @@ function evaluate(){
   }
 }
 
-// Tasainen iskujono (esim. 1/4- tai 1/8-osia) selvästi eri tempossa kuin klikki:
+// Tasainen iskujono (1/4- tai 1/8-osia) selvästi eri tempossa kuin klikki:
 // tempo vaihtui nopeammin kuin siirtymän seuranta ehtii, joten tempo luetaan iskujen väleistä.
 // Väli lasketaan neljän välin keskiarvona, jottei ihmisen luonnollinen vaihtelu laukaise sitä.
+// Vain kahdeksasosat ja harvemmat: fillien nopeat iskusarjat (1/16-triolit, 1/32-rullat) ovat
+// myös tasaisia jonoja, mutta niistä ei pidä päätellä tempoa.
 function checkSteadyStream(){
   if (raw.length < 5) return false;
   const r = raw.slice(-5), iois = r.slice(1).map((t,i) => t - r[i]);
   if (Math.max(...iois) / Math.min(...iois) > 1.2) return false;
   const ioi = (r[4] - r[0]) / 4;
   const P0 = 60 / clickBpm;
-  const mult = S.sub === 1 ? [1] : S.sub === 2 ? [1,2] : (S.sub === 3 || (!S.sub && feel === 3)) ? [1,3] : [1,2,4];
+  if (ioi < 0.4 * P0) return false;
+  const mult = S.sub === 1 ? [1] : [1, 2];
   const dist = P => Math.abs(Math.log(P / P0));
   const P = mult.map(m => ioi*m).reduce((a,b) => dist(a) <= dist(b) ? a : b);
   if (dist(P) < Math.log(1.07) || !(60/P > 30 && 60/P < 300) || inTol(60/P - S.bpm, 1)) return false;
@@ -638,7 +638,7 @@ async function start(){
   ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:"interactive"});
   await ctx.resume();
   running = true; level = 1; mode = "guiding"; clickBpm = S.bpm; outDelayEst = null; catchLeft = 0;
-  resetTracking(); chartPts = []; beatLog = []; feel = 4;
+  resetTracking(); chartPts = []; beatLog = [];
   lastHitT = -Infinity; flashQ = []; beatsTotal = beatsQuiet = 0;
   $("go").textContent = "Lopeta"; $("go").classList.add("stop");
   // mikrofonin lupa ja tiedoston purku ennen ensimmäistä klikkiä
